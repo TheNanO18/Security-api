@@ -55,24 +55,6 @@ public class DatabaseManager {
         return data;
     }
     
-    public Map<String, String> getEncrypData(Connection conn, String tableName, UUID uuid) throws SQLException {
-        Map<String, String> data = new HashMap<>();
-        String sql = "SELECT en_col, iv_data, encryption_algo FROM \"" + "en_" + tableName + "\" WHERE uuid = ?";
-        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setObject(1, uuid);
-            ResultSet rs = pstmt.executeQuery();
-            if (rs.next()) {
-                ResultSetMetaData md = rs.getMetaData();
-                int columns          = md.getColumnCount();
-                for (int i = 1; i <= columns; i++) {
-                    data.put(md.getColumnName(i).toLowerCase(), rs.getString(i));
-                }
-            }
-        }
-        
-        return data;
-    }
-
     public List<String> getColumnNames(Connection conn, String tableName) throws SQLException {
         List<String> columnNames = new ArrayList<>();
         String sql = "SELECT * FROM \"" + tableName + "\" LIMIT 0";
