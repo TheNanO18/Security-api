@@ -26,14 +26,14 @@ public class Main {
         server.setExecutor(null);
         server.start();
 
-//        System.out.println("✅ 서버가 시작되었습니다. http://localhost:" + port + apiPath);''
+        System.out.println("✅ 서버가 시작되었습니다. http://localhost:" + port + apiPath);
 
         String authToken = jwsHandler.generateToken(serverSecretKey, "ezis", "wedatalab");
-//        System.out.println("---");
-//        System.out.println("사용할 테스트 토큰:");
+        System.out.println("---");
+        System.out.println("사용할 테스트 토큰:");
         System.out.println("Bearer " + authToken);
         String base64UrlKey = Base64.getUrlEncoder().withoutPadding().encodeToString(serverSecretKey.getEncoded());
-//        System.out.println("secret key (Base64URL): " + base64UrlKey);
-//        System.out.println("---");
+        System.out.println("secret key (Base64URL): " + base64UrlKey);
+        System.out.println("---");
     }
 }
