@@ -1,39 +1,54 @@
 package securityapi;
 
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.util.Base64;
+
+import javax.crypto.SecretKey;
+
 import com.sun.net.httpserver.HttpServer;
+
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
+import securityapi.api.LoginHandler;
 import securityapi.api.ProcessHandler;
 import securityapi.authtoken.JwsGenerator;
 import securityapi.config.ConfigLoader;
-
-import javax.crypto.SecretKey;
-import java.io.IOException;
-import java.net.InetSocketAddress;
-
-import java.util.Base64;
+import securityapi.dbmanage.UserDAO;
 
 public class Main {
     private static final JwsGenerator jwsHandler = new JwsGenerator();
     private static final SecretKey serverSecretKey = Keys.secretKeyFor(SignatureAlgorithm.HS256);
 
     public static void main(String[] args) throws IOException {
-        int port       = ConfigLoader.getIntProperty("server.port");
-        String apiPath = ConfigLoader.getProperty("server.api.path");
+        // 1. config.properties에서 모든 경로 정보 읽어오기
+        int port         = ConfigLoader.getIntProperty("server.port");
+        String apiPath   = ConfigLoader.getProperty("server.api.path");
+        String loginPath = ConfigLoader.getProperty("server.login.path"); // ◀️ 로그인 경로 읽기
 
         HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
+        
+        String dbUrl = ConfigLoader.getProperty("db.url");
+        String dbUser = ConfigLoader.getProperty("db.user");
+        String dbPass = ConfigLoader.getProperty("db.pass");
+        
+        UserDAO userDAO = new UserDAO(dbUrl, dbUser, dbPass);
+
+        // 2. 읽어온 변수를 사용하여 컨텍스트 생성
+        server.createContext(loginPath, new LoginHandler(jwsHandler, serverSecretKey, userDAO));
         server.createContext(apiPath, new ProcessHandler(jwsHandler, serverSecretKey));
+
         server.setExecutor(null);
         server.start();
 
-        System.out.println("✅ 서버가 시작되었습니다. http://localhost:" + port + apiPath);
+        // 3. 서버 시작 메시지에서도 변수 사용
+        System.out.println("✅ 서버가 시작되었습니다. http://localhost:" + port);
+        System.out.println("로그인 엔드포인트: http://localhost:" + port + loginPath);
+        System.out.println("API 엔드포인트: http://localhost:" + port + apiPath);
 
-        String authToken = jwsHandler.generateToken(serverSecretKey, "ezis", "wedatalab");
-        System.out.println("---");
-        System.out.println("사용할 테스트 토큰:");
-        System.out.println("Bearer " + authToken);
         String base64UrlKey = Base64.getUrlEncoder().withoutPadding().encodeToString(serverSecretKey.getEncoded());
-        System.out.println("secret key (Base64URL): " + base64UrlKey);
+        System.out.println("---");
+        System.out.println("🔑 서버 비밀키 (Base64URL): " + base64UrlKey);
         System.out.println("---");
     }
 }

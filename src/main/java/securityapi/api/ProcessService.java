@@ -76,6 +76,7 @@ public class ProcessService {
                     }
                     
                     response.put("status", "success");
+                    response.put("en_col", colsToProcessStr);
                     response.put("iv", iv);
                     response.put("result", dataToInsert);
                     
@@ -126,6 +127,7 @@ public class ProcessService {
                                     processedData.put(col, result);
                                 }
                             }
+                            response.put("en_col", colsToProcessStr);
                         } 
                         // 4. 복호화(de) 로직 블록
                         else { // mode가 "de"인 경우
@@ -265,10 +267,19 @@ public class ProcessService {
                              List<String> columnsToUpdateInDB = new ArrayList<>(processedData.keySet());
                              
                              if (isEncryptMode) {
+                            	 System.out.println(requestedColumns);
                                  List<String> orderedProcessdColumns = allTableColumnNames.stream()
-                                     .filter(colName -> processedData.keySet().contains(colName) && !"password".equals(colName))
+                                     .filter(colName -> processedData.keySet().contains(colName))
                                      .collect(Collectors.toList());
-                                 dbManager.insertOldData(conn, table, uuid, processedData, orderedProcessdColumns, ivToUse, algo);
+//                                 if(passwordColumn != null) {
+//                                     // 람다가 사용할 final 변수를 새로 선언해줍니다.
+//                                     // 이 변수는 이 시점의 passwordColumn 값을 가지며, 다시는 바뀌지 않습니다.
+//                                     final String finalPasswordColumn = passwordColumn;
+//
+//                                     // 이제 에러 없이 final 변수를 사용할 수 있습니다.
+//                                     orderedProcessdColumns.removeIf(colName -> colName.equals(finalPasswordColumn));
+//                                 }
+                                 dbManager.insertOldData(conn, table, uuid, processedData, requestedColumns, ivToUse, algo);
                              } else {
                                  dbManager.executeUpdate(conn, uuid, processedData, allTableColumnNames, isEncryptMode, null, algo, alreadyEncryptedColumns, columnsToUpdateInDB, table);
                              }
