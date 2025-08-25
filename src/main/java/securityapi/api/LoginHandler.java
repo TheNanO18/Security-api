@@ -21,8 +21,8 @@ public class LoginHandler implements HttpHandler {
 
     public LoginHandler(JwsGenerator jwsGenerator, SecretKey secretKey, UserDAO userDAO) {
         this.jwsGenerator = jwsGenerator;
-        this.secretKey = secretKey;
-        this.userDAO = userDAO;
+        this.secretKey    = secretKey;
+        this.userDAO      = userDAO;
     }
 
     @Override

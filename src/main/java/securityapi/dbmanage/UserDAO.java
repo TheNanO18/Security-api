@@ -1,4 +1,4 @@
-package securityapi.dbmanage; // DAO 클래스를 위한 새 패키지 생성 권장
+package securityapi.dbmanage;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -6,7 +6,10 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 
+import securityapi.pwdhash.Bcrypt; // Bcrypt 클래스 임포트
+
 public class UserDAO {
+    // ... 기존 코드 (생성자, validateUser 메소드) ...
     private final String dbUrl;
     private final String dbUser;
     private final String dbPass;
@@ -16,29 +19,60 @@ public class UserDAO {
         this.dbUser = dbUser;
         this.dbPass = dbPass;
     }
+
+    /**
+     * 신규 사용자를 생성하고 데이터베이스에 저장합니다.
+     * @param id 생성할 사용자의 아이디
+     * @param rawPassword 해싱되지 않은 원본 비밀번호
+     * @return 생성 성공 시 true, 아이디 중복 시 false
+     * @throws SQLException 데이터베이스 처리 중 오류 발생 시
+     */
+    public boolean createUser(String id, String rawPassword) throws SQLException {
+        String checkUserSql  = "SELECT id FROM en_user WHERE id = ?";
+        String insertUserSql = "INSERT INTO en_user (id, password) VALUES (?, ?)";
+
+        try (Connection conn = DriverManager.getConnection(dbUrl, dbUser, dbPass)) {
+            // 1. 아이디 중복 확인
+            try (PreparedStatement checkStmt = conn.prepareStatement(checkUserSql)) {
+                checkStmt.setString(1, id);
+                try (ResultSet rs = checkStmt.executeQuery()) {
+                    if (rs.next()) {
+                        return false; // 이미 존재하는 아이디인 경우 false 반환
+                    }
+                }
+            }
+
+            // 2. 비밀번호 해싱
+            String hashedPassword = Bcrypt.hashPassword(rawPassword);
+
+            // 3. 사용자 정보 저장
+            try (PreparedStatement insertStmt = conn.prepareStatement(insertUserSql)) {
+                insertStmt.setString(1, id);
+                insertStmt.setString(2, hashedPassword);
+                int affectedRows = insertStmt.executeUpdate();
+                return affectedRows > 0;
+            }
+        }
+    }
     
-    public boolean validateUser(String id, String password) {
-        // SQL Injection 공격 방지를 위해 PreparedStatement 사용
+    // ... 기존 validateUser 메소드 ...
+    // 로그인 시에는 비밀번호를 Bcrypt로 확인하도록 수정해야 합니다.
+    public boolean validateUser(String id, String rawPassword) {
         String sql = "SELECT password FROM en_user WHERE id = ?";
-        
-        // try-with-resources 구문으로 자원 자동 해제
         try (Connection conn = DriverManager.getConnection(dbUrl, dbUser, dbPass);
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
 
-            pstmt.setString(1, id); // 첫 번째 ?에 사용자 id 바인딩
-
+            pstmt.setString(1, id);
             try (ResultSet rs = pstmt.executeQuery()) {
-                // 해당 ID의 사용자가 존재하고, 비밀번호가 일치하는지 확인
                 if (rs.next()) {
-                    String storedPassword = rs.getString("password");
-                    // 🚨 중요: 실제 서비스에서는 반드시 해시된 비밀번호를 비교해야 합니다! (아래 보안 섹션 참고)
-                    return storedPassword.equals(password);
+                    String storedHashedPassword = rs.getString("password");
+                    // ◀️ 중요: Bcrypt.checkPassword로 비교
+                    return Bcrypt.checkPassword(rawPassword, storedHashedPassword);
                 }
             }
         } catch (SQLException e) {
             System.err.println("Database validation error: " + e.getMessage());
-            // 예외 처리 (로깅 등)
         }
-        return false; // 사용자가 없거나 비밀번호가 틀리면 false 반환
+        return false;
     }
 }

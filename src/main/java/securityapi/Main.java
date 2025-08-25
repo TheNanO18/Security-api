@@ -12,6 +12,7 @@ import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
 import securityapi.api.LoginHandler;
 import securityapi.api.ProcessHandler;
+import securityapi.api.RegisterHandler;
 import securityapi.authtoken.JwsGenerator;
 import securityapi.config.ConfigLoader;
 import securityapi.dbmanage.UserDAO;
@@ -22,21 +23,23 @@ public class Main {
 
     public static void main(String[] args) throws IOException {
         // 1. config.properties에서 모든 경로 정보 읽어오기
-        int port         = ConfigLoader.getIntProperty("server.port");
-        String apiPath   = ConfigLoader.getProperty("server.api.path");
-        String loginPath = ConfigLoader.getProperty("server.login.path"); // ◀️ 로그인 경로 읽기
+        int port            = ConfigLoader.getIntProperty("server.port");
+        String apiPath      = ConfigLoader.getProperty("server.api.path");
+        String loginPath    = ConfigLoader.getProperty("server.login.path");
+        String registerPath = ConfigLoader.getProperty("server.register.path");
 
         HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
         
-        String dbUrl = ConfigLoader.getProperty("db.url");
+        String dbUrl  = ConfigLoader.getProperty("db.url");
         String dbUser = ConfigLoader.getProperty("db.user");
         String dbPass = ConfigLoader.getProperty("db.pass");
         
         UserDAO userDAO = new UserDAO(dbUrl, dbUser, dbPass);
 
         // 2. 읽어온 변수를 사용하여 컨텍스트 생성
-        server.createContext(loginPath, new LoginHandler(jwsHandler, serverSecretKey, userDAO));
-        server.createContext(apiPath, new ProcessHandler(jwsHandler, serverSecretKey));
+        server.createContext(loginPath,    new LoginHandler(jwsHandler, serverSecretKey, userDAO));
+        server.createContext(apiPath,      new ProcessHandler(jwsHandler, serverSecretKey));
+        server.createContext(registerPath, new RegisterHandler(userDAO));
 
         server.setExecutor(null);
         server.start();

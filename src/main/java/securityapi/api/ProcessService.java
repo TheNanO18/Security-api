@@ -271,14 +271,6 @@ public class ProcessService {
                                  List<String> orderedProcessdColumns = allTableColumnNames.stream()
                                      .filter(colName -> processedData.keySet().contains(colName))
                                      .collect(Collectors.toList());
-//                                 if(passwordColumn != null) {
-//                                     // 람다가 사용할 final 변수를 새로 선언해줍니다.
-//                                     // 이 변수는 이 시점의 passwordColumn 값을 가지며, 다시는 바뀌지 않습니다.
-//                                     final String finalPasswordColumn = passwordColumn;
-//
-//                                     // 이제 에러 없이 final 변수를 사용할 수 있습니다.
-//                                     orderedProcessdColumns.removeIf(colName -> colName.equals(finalPasswordColumn));
-//                                 }
                                  dbManager.insertOldData(conn, table, uuid, processedData, requestedColumns, ivToUse, algo);
                              } else {
                                  dbManager.executeUpdate(conn, uuid, processedData, allTableColumnNames, isEncryptMode, null, algo, alreadyEncryptedColumns, columnsToUpdateInDB, table);
