@@ -36,6 +36,35 @@ public class DatabaseManager {
         
         return conn;
     }
+    
+    public List<Map<String, Object>> getAllData(Connection conn, String tableName) throws SQLException {
+        // 1. 반환 타입을 List<Map<String, Object>>로 변경
+        List<Map<String, Object>> allRows = new ArrayList<>();
+        
+        // SQL 구문의 마지막에 빠져있던 큰따옴표(")를 추가합니다.
+        // 경고: 이 방식은 SQL 인젝션에 취약할 수 있습니다. 아래 '보안' 섹션을 참고하세요.
+        String sql = "SELECT * FROM \"" + tableName + "\"";
+
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            ResultSet rs = pstmt.executeQuery();
+            ResultSetMetaData md = rs.getMetaData();
+            int columnCount = md.getColumnCount();
+
+            // 2. if -> while 반복문으로 변경하여 모든 행을 순회
+            while (rs.next()) {
+                // 각 행의 데이터를 저장할 새로운 Map 생성
+                Map<String, Object> row = new HashMap<>();
+                for (int i = 1; i <= columnCount; i++) {
+                    // 컬럼 타입을 유지하기 위해 getString 대신 getObject 사용
+                    row.put(md.getColumnName(i), rs.getObject(i));
+                }
+                // 완성된 행을 리스트에 추가
+                allRows.add(row);
+            }
+        }
+        
+        return allRows;
+    }
 
     public Map<String, String> getDataById(Connection conn, String tableName, UUID uuid) throws SQLException {
         Map<String, String> data = new HashMap<>();
