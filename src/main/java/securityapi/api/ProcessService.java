@@ -1,6 +1,10 @@
 package securityapi.api;
 
 import securityapi.dbmanage.DatabaseManager;
+import securityapi.dto.DbConfig;
+import securityapi.dto.MainRequest;
+import securityapi.dto.PasswordInfo;
+import securityapi.dto.ProcessRequest;
 import securityapi.pwdhash.Bcrypt;
 import securityapi.securityalgo.EncryptionService;
 
@@ -9,7 +13,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 public class ProcessService {
-    private DatabaseManager dbManager;
+
     private final EncryptionService encryptionService;
 
     public ProcessService() {
@@ -17,63 +21,53 @@ public class ProcessService {
         this.encryptionService = new EncryptionService(testKey);
     }
 
-    private void ensureDbManagerInitialized(Map<String, Object> requestData) {
-        if (this.dbManager == null) {
-            @SuppressWarnings("unchecked")
-            Map<String, String> dbConfig = (Map<String, String>) requestData.get("db_config");
-
-            if (dbConfig == null || !dbConfig.containsKey("url") || !dbConfig.containsKey("user") || !dbConfig.containsKey("pass")) {
-                throw new IllegalArgumentException("요청에 유효한 'db_config' 객체(url, user, pass 포함)가 필요합니다.");
-            }
-
-            this.dbManager = new DatabaseManager(
-                    dbConfig.get("url"),
-                    dbConfig.get("user"),
-                    dbConfig.get("pass")
-            );
+    public List<Map<String, Object>> processBatchRequest(MainRequest mainRequest) throws Exception {
+        DbConfig dbConfig = mainRequest.getDbConfig();
+        if (dbConfig == null || dbConfig.getUrl() == null || dbConfig.getUser() == null || dbConfig.getPass() == null) {
+            throw new IllegalArgumentException("요청에 유효한 'db_config' 객체가 필요합니다.");
         }
+
+        DatabaseManager dbManager = new DatabaseManager(dbConfig.getUrl(), dbConfig.getUser(), dbConfig.getPass());
+        List<Map<String, Object>> batchResults = new ArrayList<>();
+
+        try (Connection conn = dbManager.getConnection()) {
+            for (ProcessRequest request : mainRequest.getRequests()) {
+                Map<String, Object> result = processSingleRequest(conn, dbManager, request);
+                batchResults.add(result);
+            }
+        }
+        return batchResults;
     }
 
-    public Map<String, Object> processSingleRequest(Connection conn, Map<String, Object> requestData) {
+    public Map<String, Object> processSingleRequest(Connection conn, DatabaseManager dbManager, ProcessRequest requestData) {
         Map<String, Object> response = new LinkedHashMap<>();
+        response.put("uuid", requestData.getUuid());
 
         try {
-            ensureDbManagerInitialized(requestData);
-
             String hashedPassword = null;
             String passwordColumn = null;
-            Object passwordObject = requestData.get("password");
+            PasswordInfo passwordInfo = requestData.getPassword();
 
-            if (passwordObject instanceof Map) {
-                @SuppressWarnings("unchecked")
-                Map<String, String> passwordData = (Map<String, String>) passwordObject;
-                String rawPassword = passwordData.get("value");
-                passwordColumn = passwordData.get("column");
-                if (rawPassword != null && !rawPassword.isEmpty() && passwordColumn != null) {
-                    hashedPassword = Bcrypt.hashPassword(rawPassword);
-                }
+            if (passwordInfo != null && passwordInfo.getValue() != null && !passwordInfo.getValue().isEmpty()) {
+                passwordColumn = passwordInfo.getColumn();
+                hashedPassword = Bcrypt.hashPassword(passwordInfo.getValue());
             }
 
-            String routeType = (String) requestData.get("route_type");
-            String infoType = (String) requestData.get("info_type");
-            String table = (String) requestData.get("table");
-            String algo = (String) requestData.get("algo");
-            String colsToProcessStr = (String) requestData.get("col");
-
+            String routeType = requestData.getRoute_type();
+            String infoType = requestData.getInfo_type();
+            String table = requestData.getTable();
+            String algo = requestData.getAlgo();
+            String colsToProcessStr = requestData.getCol();
+            
             if ("api".equals(routeType)) {
                 if ("new".equals(infoType)) {
-                    @SuppressWarnings("unchecked")
-                    Map<String, String> originalDataMap = (Map<String, String>) requestData.get("data");
+                    Map<String, String> originalDataMap = requestData.getData();
                     if (originalDataMap == null || originalDataMap.isEmpty()) {
                         throw new IllegalArgumentException("'new' 타입 요청에는 'data' 객체가 반드시 필요합니다.");
                     }
-
                     Map<String, String> dataToInsert = new HashMap<>();
                     String iv = encryptionService.generateIv();
-                    List<String> columnsToEncrypt = (colsToProcessStr == null || colsToProcessStr.isBlank()) ?
-                            Collections.emptyList() :
-                            Arrays.asList(colsToProcessStr.split("\\s*,\\s*"));
-
+                    List<String> columnsToEncrypt = (colsToProcessStr == null || colsToProcessStr.isBlank()) ? Collections.emptyList() : Arrays.asList(colsToProcessStr.split("\\s*,\\s*"));
                     for (Map.Entry<String, String> entry : originalDataMap.entrySet()) {
                         String currentColumn = entry.getKey();
                         String currentValue = entry.getValue();
@@ -85,15 +79,15 @@ public class ProcessService {
                             dataToInsert.put(currentColumn, currentValue);
                         }
                     }
-
                     response.put("status", "success");
                     response.put("en_col", colsToProcessStr);
                     response.put("iv", iv);
                     response.put("result", dataToInsert);
 
                 } else if ("old".equals(infoType)) {
-                    String uuidStr = (String) requestData.get("uuid");
-                    String mode = (String) requestData.get("mode");
+                    // ✅ 'api'/'old' 로직 전체를 DTO 기반으로 구현
+                    String uuidStr = requestData.getUuid();
+                    String mode = requestData.getMode();
                     UUID uuid = UUID.fromString(uuidStr);
 
                     if (mode == null || (!"en".equalsIgnoreCase(mode) && !"de".equalsIgnoreCase(mode))) {
@@ -111,23 +105,20 @@ public class ProcessService {
                     }
 
                     List<String> requestedColumns = (colsToProcessStr != null && !colsToProcessStr.isBlank()) ?
-                            Arrays.stream(colsToProcessStr.split("\\s*,\\s*"))
-                                    .map(String::trim)
-                                    .filter(colName -> !"uuid".equalsIgnoreCase(colName))
-                                    .collect(Collectors.toList()) : new ArrayList<>();
+                            Arrays.stream(colsToProcessStr.split("\\s*,\\s*")).map(String::trim)
+                                    .filter(colName -> !"uuid".equalsIgnoreCase(colName)).collect(Collectors.toList())
+                            : new ArrayList<>();
 
                     String ivToUse = null;
 
                     if (!requestedColumns.isEmpty()) {
                         if ("en".equalsIgnoreCase(mode)) {
-                            List<String> columnsToProcess = requestedColumns;
                             ivToUse = encryptionService.generateIv();
-                            String algoToUse = (String) requestData.get("algo");
+                            String algoToUse = requestData.getAlgo();
                             if (algoToUse == null || algoToUse.isBlank()) {
                                 throw new IllegalArgumentException("암호화(en) 시에는 'algo' 파라미터가 반드시 필요합니다.");
                             }
-
-                            for (String col : columnsToProcess) {
+                            for (String col : requestedColumns) {
                                 String value = targetData.get(col.toLowerCase());
                                 if (value != null) {
                                     String result = encryptionService.encrypt(value, ivToUse, algoToUse);
@@ -135,23 +126,17 @@ public class ProcessService {
                                 }
                             }
                             response.put("en_col", colsToProcessStr);
-                        } else { // mode가 "de"인 경우
+                        } else { // "de" mode
                             String originalEncryptedColsStr = targetData.getOrDefault("en_col", "");
-                            List<String> alreadyEncryptedColumns = (originalEncryptedColsStr == null || originalEncryptedColsStr.isBlank()) ?
-                                    new ArrayList<>() : new ArrayList<>(Arrays.asList(originalEncryptedColsStr.split(",")));
-
-                            List<String> columnsToProcess = requestedColumns.stream()
-                                    .filter(alreadyEncryptedColumns::contains)
-                                    .collect(Collectors.toList());
+                            List<String> alreadyEncryptedColumns = (originalEncryptedColsStr.isBlank()) ? new ArrayList<>() : new ArrayList<>(Arrays.asList(originalEncryptedColsStr.split(",")));
+                            List<String> columnsToProcess = requestedColumns.stream().filter(alreadyEncryptedColumns::contains).collect(Collectors.toList());
 
                             if (!columnsToProcess.isEmpty()) {
                                 ivToUse = targetData.get("iv_data");
                                 String algoToUse = targetData.get("encryption_algo");
-
                                 if (ivToUse == null || algoToUse == null) {
                                     throw new IllegalStateException("복호화를 위한 IV 또는 알고리즘 값이 DB에 없습니다.");
                                 }
-
                                 for (String col : columnsToProcess) {
                                     String value = targetData.get(col.toLowerCase());
                                     if (value != null) {
@@ -162,16 +147,13 @@ public class ProcessService {
                             }
                         }
                     }
-
                     response.put("status", "success");
                     response.put("iv", ivToUse);
                     response.put("result", processedData);
                 }
-
             } else if ("proxy".equals(routeType)) {
                 if ("new".equals(infoType)) {
-                    @SuppressWarnings("unchecked")
-                    Map<String, String> originalDataMap = (Map<String, String>) requestData.get("data");
+                    Map<String, String> originalDataMap = requestData.getData();
                     if (originalDataMap == null || originalDataMap.isEmpty()) {
                         throw new IllegalArgumentException("'new' 타입 요청에는 'data' 객체가 반드시 필요합니다.");
                     }
@@ -194,9 +176,9 @@ public class ProcessService {
                     response.put("result", dataToInsert);
 
                 } else if ("old".equals(infoType)) {
-                    String uuidStr = (String) requestData.get("uuid");
-                    String mode = (String) requestData.get("mode");
-                    String updateFlag = (String) requestData.get("update");
+                    String uuidStr = requestData.getUuid();
+                    String mode = requestData.getMode();
+                    String updateFlag = requestData.getUpdate();
                     UUID uuid = UUID.fromString(uuidStr);
 
                     if (mode == null || (!"en".equalsIgnoreCase(mode) && !"de".equalsIgnoreCase(mode))) {
@@ -204,7 +186,6 @@ public class ProcessService {
                     }
 
                     Map<String, String> targetData = dbManager.getDataById(conn, table, uuid);
-
                     if (targetData.isEmpty()) {
                         throw new NoSuchElementException("해당 UUID의 데이터를 찾을 수 없습니다: " + uuid);
                     }
@@ -215,31 +196,29 @@ public class ProcessService {
                     }
 
                     List<String> requestedColumns = (colsToProcessStr != null && !colsToProcessStr.isBlank()) ?
-                            Arrays.stream(colsToProcessStr.split("\\s*,\\s*"))
-                                    .map(String::trim)
-                                    .filter(colName -> !"uuid".equalsIgnoreCase(colName))
-                                    .collect(Collectors.toList()) : new ArrayList<>();
-
+                            Arrays.stream(colsToProcessStr.split("\\s*,\\s*")).map(String::trim)
+                                    .filter(colName -> !"uuid".equalsIgnoreCase(colName)).collect(Collectors.toList())
+                            : new ArrayList<>();
+                    
                     String ivToUse = null;
 
                     if (!requestedColumns.isEmpty()) {
                         if ("en".equalsIgnoreCase(mode)) {
-                            List<String> columnsToProcess = requestedColumns;
                             ivToUse = encryptionService.generateIv();
-                            String algoToUse = (String) requestData.get("algo");
-                            if (algoToUse == null || algoToUse.isBlank()) {
+                            String algoToUse = requestData.getAlgo();
+                             if (algoToUse == null || algoToUse.isBlank()) {
                                 throw new IllegalArgumentException("암호화(en) 시에는 'algo' 파라미터가 반드시 필요합니다.");
                             }
-                            for (String col : columnsToProcess) {
+                            for (String col : requestedColumns) {
                                 String value = targetData.get(col.toLowerCase());
                                 if (value != null) {
                                     String result = encryptionService.encrypt(value, ivToUse, algoToUse);
                                     processedData.put(col, result);
                                 }
                             }
-                        } else { // mode is "de"
+                        } else { // "de" mode
                             String originalEncryptedColsStr = targetData.getOrDefault("en_col", "");
-                            List<String> alreadyEncryptedColumns = (originalEncryptedColsStr == null || originalEncryptedColsStr.isBlank()) ? new ArrayList<>() : new ArrayList<>(Arrays.asList(originalEncryptedColsStr.split(",")));
+                            List<String> alreadyEncryptedColumns = (originalEncryptedColsStr.isBlank()) ? new ArrayList<>() : new ArrayList<>(Arrays.asList(originalEncryptedColsStr.split(",")));
                             List<String> columnsToProcess = requestedColumns.stream().filter(alreadyEncryptedColumns::contains).collect(Collectors.toList());
 
                             if (!columnsToProcess.isEmpty()) {
@@ -263,7 +242,7 @@ public class ProcessService {
                         if (!processedData.isEmpty()) {
                             boolean isEncryptMode = "en".equalsIgnoreCase(mode);
                             String originalEncryptedColsStr = targetData.getOrDefault("en_col", "");
-                            List<String> alreadyEncryptedColumns = (originalEncryptedColsStr == null || originalEncryptedColsStr.isBlank()) ? new ArrayList<>() : new ArrayList<>(Arrays.asList(originalEncryptedColsStr.split(",")));
+                            List<String> alreadyEncryptedColumns = (originalEncryptedColsStr.isBlank()) ? new ArrayList<>() : new ArrayList<>(Arrays.asList(originalEncryptedColsStr.split(",")));
                             List<String> allTableColumnNames = dbManager.getColumnNames(conn, table);
                             List<String> columnsToUpdateInDB = new ArrayList<>(processedData.keySet());
 
@@ -279,19 +258,17 @@ public class ProcessService {
                     } else if ("F".equals(updateFlag)) {
                         response.put("message", "작업이 시뮬레이션 되었습니다 (DB 업데이트 없음).");
                     }
-
                     response.put("status", "success");
                     response.put("iv", ivToUse);
                     response.put("result", processedData);
                 }
             }
-
             return response;
+
         } catch (Exception e) {
             e.printStackTrace();
             response.put("status", "error");
             response.put("message", "처리 중 오류 발생: " + e.getMessage());
-
             return response;
         }
     }

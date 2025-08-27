@@ -1,23 +1,22 @@
 package securityapi.api;
 
-import com.google.gson.Gson;
-import com.google.gson.reflect.TypeToken;
-import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpHandler;
-import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.Jws;
-import securityapi.authtoken.JwsGenerator;
-import securityapi.dbmanage.DatabaseManager;
-
-import javax.crypto.SecretKey;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
-import java.sql.Connection;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import javax.crypto.SecretKey;
+
+import com.google.gson.Gson;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
+
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.Jws;
+import securityapi.authtoken.JwsGenerator;
+import securityapi.dto.MainRequest;
 
 /**
  * HTTP 요청/응답 처리 및 인증을 담당하는 컨트롤러 클래스
@@ -27,17 +26,11 @@ public class ProcessHandler implements HttpHandler {
     private final JwsGenerator jwsHandler;
     private final SecretKey serverSecretKey;
     private final ProcessService processService;
-    private final DatabaseManager dbManager;
 
     public ProcessHandler(JwsGenerator jwsHandler, SecretKey secretKey) {
         this.jwsHandler = jwsHandler;
         this.serverSecretKey = secretKey;
         this.processService = new ProcessService();
-        this.dbManager = new DatabaseManager(
-            securityapi.config.ConfigLoader.getProperty("db.url"),
-            securityapi.config.ConfigLoader.getProperty("db.user"),
-            securityapi.config.ConfigLoader.getProperty("db.pass")
-        );
     }
 
     @Override
@@ -76,19 +69,18 @@ public class ProcessHandler implements HttpHandler {
         System.out.println("인증 성공! 사용자: " + validatedClaims.getBody().getSubject());
 
         // ◀️ 4. 인증 성공 후 비즈니스 로직 처리
-        List<Map<String, Object>> batchResults = new ArrayList<>();
-        try (Connection conn = dbManager.getConnection()) {
+        try {
+            // 1. 요청 본문을 읽고 새로운 MainRequest DTO로 파싱합니다.
             String requestBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-            List<Map<String, Object>> requestList = GSON.fromJson(requestBody, new TypeToken<List<Map<String, Object>>>() {}.getType());
+            MainRequest mainRequest = GSON.fromJson(requestBody, MainRequest.class);
 
-            for (Map<String, Object> requestData : requestList) {
-                Map<String, Object> result = processService.processSingleRequest(conn, requestData);
-                batchResults.add(result);
-            }
+            // 2. ProcessService의 새로운 배치 처리 메소드를 호출하고 모든 작업을 위임합니다.
+            List<Map<String, Object>> results = processService.processBatchRequest(mainRequest);
 
+            // 3. 서비스로부터 받은 최종 결과를 클라이언트에 응답합니다.
             Map<String, Object> finalResponse = new HashMap<>();
             finalResponse.put("batch_status", "completed");
-            finalResponse.put("results", batchResults);
+            finalResponse.put("results", results);
             sendJsonResponse(exchange, 200, finalResponse);
 
         } catch (Exception e) {

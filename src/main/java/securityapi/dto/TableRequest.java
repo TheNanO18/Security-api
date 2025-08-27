@@ -8,11 +8,11 @@ public class TableRequest {
 
     // @JsonProperty 대신 @SerializedName 사용
     @SerializedName("db_config")
-    private DbConfigRequest dbConfig;
+    private DbConfig dbConfig;
 
     // Getter와 Setter
     public String getTableName() { return tableName; }
     public void setTableName(String tableName) { this.tableName = tableName; }
-    public DbConfigRequest getDbConfig() { return dbConfig; }
-    public void setDbConfig(DbConfigRequest dbConfig) { this.dbConfig = dbConfig; }
+    public DbConfig getDbConfig() { return dbConfig; }
+    public void setDbConfig(DbConfig dbConfig) { this.dbConfig = dbConfig; }
 }

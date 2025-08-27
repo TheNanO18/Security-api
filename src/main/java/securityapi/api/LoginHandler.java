@@ -43,7 +43,7 @@ public class LoginHandler implements HttpHandler {
         InputStream is = exchange.getRequestBody();
         String requestBody = new String(is.readAllBytes(), StandardCharsets.UTF_8);
 
-        String id       = parseJsonField(requestBody, "username"); // React 코드와 키 이름을 "username"으로 통일
+        String id       = parseJsonField(requestBody, "id"); // React 코드와 키 이름을 "username"으로 통일
         String password = parseJsonField(requestBody, "password");
 
         if (userDAO.validateUser(id, password)) {

@@ -4,6 +4,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.Properties;
 
+// 현재 사용 x, 나중에 유저 로그인 관리를 다른 특정 DB에서 하고 암호화 설정 DB 접속을 따로할 경우에만 사용
+
 public class ConfigLoader {
     private static final Properties properties = new Properties();
 
