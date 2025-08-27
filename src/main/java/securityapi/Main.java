@@ -42,7 +42,7 @@ public class Main {
         server.createContext(loginPath,     new LoginHandler(jwsHandler, serverSecretKey, userDAO));
         server.createContext(apiPath,       new ProcessHandler(jwsHandler, serverSecretKey));
         server.createContext(registerPath,  new RegisterHandler(userDAO));
-        server.createContext(tableDataPath, new TableDataHandler());
+        server.createContext(tableDataPath, new TableDataHandler(jwsHandler, serverSecretKey));
         
         server.setExecutor(null);
         server.start();
