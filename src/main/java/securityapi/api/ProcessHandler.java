@@ -3,6 +3,8 @@ package securityapi.api;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.sql.Connection;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -16,7 +18,12 @@ import com.sun.net.httpserver.HttpHandler;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jws;
 import securityapi.authtoken.JwsGenerator;
+import securityapi.config.ConfigLoader;
+import securityapi.dbmanage.DatabaseManager;
+import securityapi.dbmanage.UserDAO;
 import securityapi.dto.MainRequest;
+import securityapi.dto.ProcessRequest;
+import securityapi.dto.User;
 
 /**
  * HTTP 요청/응답 처리 및 인증을 담당하는 컨트롤러 클래스
@@ -26,11 +33,20 @@ public class ProcessHandler implements HttpHandler {
     private final JwsGenerator jwsHandler;
     private final SecretKey serverSecretKey;
     private final ProcessService processService;
+    private final DatabaseManager defaultDbManager;
+    private final UserDAO userDAO;
 
     public ProcessHandler(JwsGenerator jwsHandler, SecretKey secretKey) {
         this.jwsHandler = jwsHandler;
         this.serverSecretKey = secretKey;
         this.processService = new ProcessService();
+        
+        String dbUrl  = ConfigLoader.getProperty("db.url");
+        String dbUser = ConfigLoader.getProperty("db.user");
+        String dbPass = ConfigLoader.getProperty("db.pass");
+        
+        this.defaultDbManager = new DatabaseManager(dbUrl, dbUser, dbPass);
+        this.userDAO          = new UserDAO(dbUrl, dbUser, dbPass);
     }
 
     @Override
@@ -67,14 +83,64 @@ public class ProcessHandler implements HttpHandler {
         }
 
         System.out.println("인증 성공! 사용자: " + validatedClaims.getBody().getSubject());
+        
+        String userId = validatedClaims.getBody().getSubject();
 
         // ◀️ 4. 인증 성공 후 비즈니스 로직 처리
         try {
             // 1. 요청 본문을 읽고 새로운 MainRequest DTO로 파싱합니다.
             String requestBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
             MainRequest mainRequest = GSON.fromJson(requestBody, MainRequest.class);
+            
+         // --- AUTHORIZATION LOGIC ---
+            User permissions;
+            
+            try (Connection conn = defaultDbManager.getConnection()) {
+                permissions = userDAO.getUserPermissions(conn, userId);
+            }
 
-            // 2. ProcessService의 새로운 배치 처리 메소드를 호출하고 모든 작업을 위임합니다.
+            if (permissions == null) {
+                sendJsonResponse(exchange, 403, Map.of("status", "error", "message", "Forbidden: User permissions not found."));
+                return;
+            }
+
+            // 1. IP 주소 검사
+         // ✅ Add these logs to see the actual values being compared
+
+            
+            String clientIp = exchange.getRemoteAddress().getAddress().getHostAddress();
+            
+            System.out.println(clientIp);
+            System.out.println(permissions.getIp());
+            
+            if ("0:0:0:0:0:0:0:1".equals(clientIp)) {
+                // clientIp 변수의 값을 "127.0.0.1"로 변경합니다.
+            	 clientIp = "127.0.0.1";
+            }
+            
+            if (!clientIp.equals(permissions.getIp())) {
+                sendJsonResponse(exchange, 403, Map.of("status", "error", "message", "Forbidden: Access from your IP is not allowed."));
+                return;
+            }
+            
+         // ✅ 2. 포트(PORT) 확인 로직 추가
+            int clientPort = exchange.getRemoteAddress().getPort();
+            // permissions.getPort()가 문자열이므로 정수(int)로 변환하여 비교합니다.
+            int allowedPort = Integer.parseInt(permissions.getPort()); 
+            if (clientPort != allowedPort) {
+                sendJsonResponse(exchange, 403, Map.of("status", "error", "message", "Forbidden: Access from your port (" + clientPort + ") is not allowed."));
+                return;
+            }
+            
+            List<String> allowedTables = Arrays.asList(permissions.getDatabase().split("\\s*,\\s*"));
+            for (ProcessRequest req : mainRequest.getRequests()) {
+                if (!allowedTables.contains(req.getTable())) {
+                    sendJsonResponse(exchange, 403, Map.of("status", "error", "message", "Forbidden: You do not have permission to access table '" + req.getTable() + "'."));
+                    return;
+                }
+            }
+         // --- END OF AUTHORIZATION ---
+            
             List<Map<String, Object>> results = processService.processBatchRequest(mainRequest);
 
             // 3. 서비스로부터 받은 최종 결과를 클라이언트에 응답합니다.

@@ -6,10 +6,10 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 
+import securityapi.dto.User;
 import securityapi.pwdhash.Bcrypt; // Bcrypt 클래스 임포트
 
 public class UserDAO {
-    // ... 기존 코드 (생성자, validateUser 메소드) ...
     private final String dbUrl;
     private final String dbUser;
     private final String dbPass;
@@ -55,8 +55,6 @@ public class UserDAO {
         }
     }
     
-    // ... 기존 validateUser 메소드 ...
-    // 로그인 시에는 비밀번호를 Bcrypt로 확인하도록 수정해야 합니다.
     public boolean validateUser(String id, String rawPassword) {
         String sql = "SELECT password FROM en_user WHERE id = ?";
         try (Connection conn = DriverManager.getConnection(dbUrl, dbUser, dbPass);
@@ -74,5 +72,22 @@ public class UserDAO {
             System.err.println("Database validation error: " + e.getMessage());
         }
         return false;
+    }
+    
+    public User getUserPermissions(Connection conn, String userId) throws SQLException {
+        String sql = "SELECT id, password, ip, port, database FROM en_user WHERE id = ?";
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, userId);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) {
+                User user = new User();
+                user.setId(rs.getString("id"));
+                user.setIp(rs.getString("ip"));
+                user.setPort(rs.getString("port"));
+                user.setDatabase(rs.getString("database"));
+                return user;
+            }
+        }
+        return null; // 사용자를 찾지 못한 경우
     }
 }
