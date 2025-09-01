@@ -27,7 +27,7 @@ public class ProcessService {
             throw new IllegalArgumentException("요청에 유효한 'db_config' 객체가 필요합니다.");
         }
 
-        DatabaseManager dbManager = new DatabaseManager(dbConfig.getUrl(), dbConfig.getUser(), dbConfig.getPass());
+        DatabaseManager dbManager              = new DatabaseManager(dbConfig.getUrl(), dbConfig.getUser(), dbConfig.getPass());
         List<Map<String, Object>> batchResults = new ArrayList<>();
 
         try (Connection conn = dbManager.getConnection()) {
@@ -53,10 +53,10 @@ public class ProcessService {
                 hashedPassword = Bcrypt.hashPassword(passwordInfo.getValue());
             }
 
-            String routeType = requestData.getRoute_type();
-            String infoType = requestData.getInfo_type();
-            String table = requestData.getTable();
-            String algo = requestData.getAlgo();
+            String routeType        = requestData.getRoute_type();
+            String infoType         = requestData.getInfo_type();
+            String table            = requestData.getTable();
+            String algo             = requestData.getAlgo();
             String colsToProcessStr = requestData.getCol();
             
             if ("api".equals(routeType)) {
@@ -66,8 +66,9 @@ public class ProcessService {
                         throw new IllegalArgumentException("'new' 타입 요청에는 'data' 객체가 반드시 필요합니다.");
                     }
                     Map<String, String> dataToInsert = new HashMap<>();
-                    String iv = encryptionService.generateIv();
-                    List<String> columnsToEncrypt = (colsToProcessStr == null || colsToProcessStr.isBlank()) ? Collections.emptyList() : Arrays.asList(colsToProcessStr.split("\\s*,\\s*"));
+                    String iv                        = encryptionService.generateIv();
+                    List<String> columnsToEncrypt    = (colsToProcessStr == null || colsToProcessStr.isBlank()) ? Collections.emptyList() : Arrays.asList(colsToProcessStr.split("\\s*,\\s*"));
+                    
                     for (Map.Entry<String, String> entry : originalDataMap.entrySet()) {
                         String currentColumn = entry.getKey();
                         String currentValue = entry.getValue();
@@ -79,6 +80,7 @@ public class ProcessService {
                             dataToInsert.put(currentColumn, currentValue);
                         }
                     }
+                    
                     response.put("status", "success");
                     response.put("en_col", colsToProcessStr);
                     response.put("iv", iv);
@@ -87,8 +89,8 @@ public class ProcessService {
                 } else if ("old".equals(infoType)) {
                     // ✅ 'api'/'old' 로직 전체를 DTO 기반으로 구현
                     String uuidStr = requestData.getUuid();
-                    String mode = requestData.getMode();
-                    UUID uuid = UUID.fromString(uuidStr);
+                    String mode    = requestData.getMode();
+                    UUID uuid      = UUID.fromString(uuidStr);
 
                     if (mode == null || (!"en".equalsIgnoreCase(mode) && !"de".equalsIgnoreCase(mode))) {
                         throw new IllegalArgumentException("mode 파라미터는 'en' 또는 'de' 값만 허용됩니다.");
@@ -127,9 +129,9 @@ public class ProcessService {
                             }
                             response.put("en_col", colsToProcessStr);
                         } else { // "de" mode
-                            String originalEncryptedColsStr = targetData.getOrDefault("en_col", "");
+                            String originalEncryptedColsStr      = targetData.getOrDefault("en_col", "");
                             List<String> alreadyEncryptedColumns = (originalEncryptedColsStr.isBlank()) ? new ArrayList<>() : new ArrayList<>(Arrays.asList(originalEncryptedColsStr.split(",")));
-                            List<String> columnsToProcess = requestedColumns.stream().filter(alreadyEncryptedColumns::contains).collect(Collectors.toList());
+                            List<String> columnsToProcess        = requestedColumns.stream().filter(alreadyEncryptedColumns::contains).collect(Collectors.toList());
 
                             if (!columnsToProcess.isEmpty()) {
                                 ivToUse = targetData.get("iv_data");
@@ -147,9 +149,11 @@ public class ProcessService {
                             }
                         }
                     }
+                    
                     response.put("status", "success");
                     response.put("iv", ivToUse);
                     response.put("result", processedData);
+                    
                 }
             } else if ("proxy".equals(routeType)) {
                 if ("new".equals(infoType)) {
@@ -158,11 +162,11 @@ public class ProcessService {
                         throw new IllegalArgumentException("'new' 타입 요청에는 'data' 객체가 반드시 필요합니다.");
                     }
                     Map<String, String> dataToInsert = new HashMap<>();
-                    String iv = encryptionService.generateIv();
-                    List<String> columnsToEncrypt = (colsToProcessStr == null || colsToProcessStr.isBlank()) ? Collections.emptyList() : Arrays.asList(colsToProcessStr.split("\\s*,\\s*"));
+                    String iv                        = encryptionService.generateIv();
+                    List<String> columnsToEncrypt    = (colsToProcessStr == null || colsToProcessStr.isBlank()) ? Collections.emptyList() : Arrays.asList(colsToProcessStr.split("\\s*,\\s*"));
                     for (Map.Entry<String, String> entry : originalDataMap.entrySet()) {
                         String currentColumn = entry.getKey();
-                        String currentValue = entry.getValue();
+                        String currentValue  = entry.getValue();
                         if (currentColumn.equals(passwordColumn)) {
                             dataToInsert.put(currentColumn, hashedPassword);
                         } else if (columnsToEncrypt.contains(currentColumn)) {
@@ -171,15 +175,16 @@ public class ProcessService {
                             dataToInsert.put(currentColumn, currentValue);
                         }
                     }
+                    
                     response.put("status", "success");
                     response.put("iv", iv);
                     response.put("result", dataToInsert);
 
                 } else if ("old".equals(infoType)) {
-                    String uuidStr = requestData.getUuid();
-                    String mode = requestData.getMode();
+                    String uuidStr    = requestData.getUuid();
+                    String mode       = requestData.getMode();
                     String updateFlag = requestData.getUpdate();
-                    UUID uuid = UUID.fromString(uuidStr);
+                    UUID uuid         = UUID.fromString(uuidStr);
 
                     if (mode == null || (!"en".equalsIgnoreCase(mode) && !"de".equalsIgnoreCase(mode))) {
                         throw new IllegalArgumentException("mode 파라미터는 'en' 또는 'de' 값만 허용됩니다.");
@@ -217,9 +222,9 @@ public class ProcessService {
                                 }
                             }
                         } else { // "de" mode
-                            String originalEncryptedColsStr = targetData.getOrDefault("en_col", "");
+                            String originalEncryptedColsStr      = targetData.getOrDefault("en_col", "");
                             List<String> alreadyEncryptedColumns = (originalEncryptedColsStr.isBlank()) ? new ArrayList<>() : new ArrayList<>(Arrays.asList(originalEncryptedColsStr.split(",")));
-                            List<String> columnsToProcess = requestedColumns.stream().filter(alreadyEncryptedColumns::contains).collect(Collectors.toList());
+                            List<String> columnsToProcess        = requestedColumns.stream().filter(alreadyEncryptedColumns::contains).collect(Collectors.toList());
 
                             if (!columnsToProcess.isEmpty()) {
                                 ivToUse = targetData.get("iv_data");
@@ -240,11 +245,11 @@ public class ProcessService {
 
                     if ("T".equals(updateFlag)) {
                         if (!processedData.isEmpty()) {
-                            boolean isEncryptMode = "en".equalsIgnoreCase(mode);
-                            String originalEncryptedColsStr = targetData.getOrDefault("en_col", "");
+                            boolean isEncryptMode                = "en".equalsIgnoreCase(mode);
+                            String originalEncryptedColsStr      = targetData.getOrDefault("en_col", "");
                             List<String> alreadyEncryptedColumns = (originalEncryptedColsStr.isBlank()) ? new ArrayList<>() : new ArrayList<>(Arrays.asList(originalEncryptedColsStr.split(",")));
-                            List<String> allTableColumnNames = dbManager.getColumnNames(conn, table);
-                            List<String> columnsToUpdateInDB = new ArrayList<>(processedData.keySet());
+                            List<String> allTableColumnNames     = dbManager.getColumnNames(conn, table);
+                            List<String> columnsToUpdateInDB     = new ArrayList<>(processedData.keySet());
 
                             if (isEncryptMode) {
                                 dbManager.insertOldData(conn, table, uuid, processedData, requestedColumns, ivToUse, algo);
@@ -258,9 +263,11 @@ public class ProcessService {
                     } else if ("F".equals(updateFlag)) {
                         response.put("message", "작업이 시뮬레이션 되었습니다 (DB 업데이트 없음).");
                     }
+                    
                     response.put("status", "success");
                     response.put("iv", ivToUse);
                     response.put("result", processedData);
+                    
                 }
             }
             return response;

@@ -32,9 +32,9 @@ public class RefreshTokenHandler implements HttpHandler {
 
     public RefreshTokenHandler(JwsGenerator jwsGenerator, SecretKey secretKey, UserDAO userDAO, DatabaseManager dbManager) {
         this.jwsGenerator = jwsGenerator;
-        this.secretKey = secretKey;
-        this.userDAO = userDAO;
-        this.dbManager = dbManager;
+        this.secretKey    = secretKey;
+        this.userDAO      = userDAO;
+        this.dbManager    = dbManager;
     }
 
     @Override
@@ -54,7 +54,7 @@ public class RefreshTokenHandler implements HttpHandler {
 
         try {
             Reader reader = new InputStreamReader(exchange.getRequestBody(), StandardCharsets.UTF_8);
-            Type mapType = new TypeToken<Map<String, String>>() {}.getType();
+            Type mapType  = new TypeToken<Map<String, String>>() {}.getType();
             Map<String, String> body = GSON.fromJson(reader, mapType);
             String refreshToken = body.get("refreshToken");
 
@@ -91,10 +91,10 @@ public class RefreshTokenHandler implements HttpHandler {
     }
     
     private void sendJsonResponse(HttpExchange exchange, int statusCode, Map<String, ?> responseMap) throws IOException {
-        exchange.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
-        exchange.getResponseHeaders().add("Access-Control-Expose-Headers", "Authorization");
         String jsonResponse = GSON.toJson(responseMap);
         byte[] responseBytes = jsonResponse.getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
+        exchange.getResponseHeaders().add("Access-Control-Expose-Headers", "Authorization");
         exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
         exchange.sendResponseHeaders(statusCode, responseBytes.length);
         try (OutputStream os = exchange.getResponseBody()) {

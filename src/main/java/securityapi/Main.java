@@ -30,11 +30,13 @@ public class Main {
         int port                = ConfigLoader.getIntProperty("server.port");
         String apiPath          = ConfigLoader.getProperty("server.api.path");
         String loginPath        = ConfigLoader.getProperty("server.login.path");
-        String registerPath     = ConfigLoader.getProperty("server.register.path");
-        String tableDataPath    = ConfigLoader.getProperty("server.tableData.path");
         String refreshTokenPath = ConfigLoader.getProperty("server.refreshToken.path");
         String logoutPath       = ConfigLoader.getProperty("server.logout.path");
-
+        
+        //추후 삭제 가능성 높음
+        String registerPath     = ConfigLoader.getProperty("server.register.path");
+        String tableDataPath    = ConfigLoader.getProperty("server.tableData.path");
+        
         HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
         
         DatabaseManager dbManager = new DatabaseManager(
@@ -50,25 +52,27 @@ public class Main {
         UserDAO userDAO = new UserDAO(dbUrl, dbUser, dbPass);
         
         LoginHandler loginHandler               = new LoginHandler(jwsHandler, serverSecretKey, userDAO);
-        RegisterHandler registerHandler         = new RegisterHandler(userDAO);
         ProcessHandler processHandler           = new ProcessHandler(jwsHandler, serverSecretKey);
-        TableDataHandler tableDataHandler       = new TableDataHandler(jwsHandler, serverSecretKey);
         RefreshTokenHandler refreshTokenHandler = new RefreshTokenHandler(jwsHandler, serverSecretKey, userDAO, dbManager);
         LogoutHandler logoutHandler             = new LogoutHandler(jwsHandler, serverSecretKey, userDAO);
-
+        
+        //추후 삭제 가능성 높음
+        RegisterHandler registerHandler         = new RegisterHandler(userDAO);
+        TableDataHandler tableDataHandler       = new TableDataHandler(jwsHandler, serverSecretKey);
+        
         server.createContext(loginPath,     loginHandler);
         server.createContext(apiPath,       processHandler);
-        server.createContext(registerPath,  registerHandler);
-        server.createContext(tableDataPath, tableDataHandler);
         server.createContext(refreshTokenPath, refreshTokenHandler);
         server.createContext(logoutPath, logoutHandler);
+        
+       //추후 삭제 가능성 높음
+        server.createContext(registerPath,  registerHandler);
+        server.createContext(tableDataPath, tableDataHandler);
         
         server.setExecutor(null);
         server.start();
 
         System.out.println("✅ 서버가 시작되었습니다. http://localhost:" + port);
-        System.out.println("로그인 엔드포인트: http://localhost:" + port + loginPath);
-        System.out.println("API 엔드포인트: http://localhost:" + port + apiPath);
 
         String base64UrlKey = Base64.getUrlEncoder().withoutPadding().encodeToString(serverSecretKey.getEncoded());
         System.out.println("---");

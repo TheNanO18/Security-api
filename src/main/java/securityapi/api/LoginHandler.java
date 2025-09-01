@@ -85,7 +85,7 @@ public class LoginHandler implements HttpHandler {
         exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
         exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
         exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type, Authorization");
-        // ✅ [수정] 브라우저의 JS가 Authorization 헤더를 읽을 수 있도록 허용
+        
         exchange.getResponseHeaders().set("Access-Control-Expose-Headers", "Authorization");
         exchange.sendResponseHeaders(204, -1);
     }
@@ -95,7 +95,6 @@ public class LoginHandler implements HttpHandler {
      */
     private void sendResponse(HttpExchange exchange, int statusCode, String response) throws IOException {
         exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
-        // ✅ [수정] 실제 응답에도 Expose-Headers를 포함시켜야 함
         exchange.getResponseHeaders().set("Access-Control-Expose-Headers", "Authorization");
         
         exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
