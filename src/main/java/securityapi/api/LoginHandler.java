@@ -10,6 +10,7 @@ import java.util.Map;
 
 import javax.crypto.SecretKey;
 
+import com.google.gson.Gson;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 
@@ -50,29 +51,34 @@ public class LoginHandler implements HttpHandler {
         String password = parseJsonField(requestBody, "password");
 
         if (userDAO.validateUser(id, password)) {
-            // 인증 성공: 토큰 생성
-            String issuer       = "wedatalab";
-            String accessToken  = jwsGenerator.generateAccessToken(secretKey, id, issuer);
+            // --- Authentication Success ---
+            String issuer = "wedatalab";
+            String accessToken = jwsGenerator.generateAccessToken(secretKey, id, issuer);
             String refreshToken = jwsGenerator.generateRefreshToken(secretKey, id);
             
             try {
-				userDAO.saveRefreshToken(id, refreshToken);
-			} catch (SQLException e) {
-				e.printStackTrace();
-			}
+                userDAO.saveRefreshToken(id, refreshToken);
+            } catch (SQLException e) {
+                e.printStackTrace();
+                // Send an error response if saving the token fails
+                sendResponse(exchange, 500, "{\"error\":\"Could not save user session\"}");
+                return;
+            }
 
-            Map<String, String> token = new HashMap<>();
-            token.put("accessToken", "Bearer " + accessToken);
-            token.put("refreshToken", refreshToken);
+            // ✅ 1. Set the Authorization header with ONLY the accessToken.
+            exchange.getResponseHeaders().set("Authorization", "Bearer " + accessToken);
             
-            // ✅ [수정] 응답 헤더에 "Authorization" 추가 (Bearer 접두사 포함)
-            exchange.getResponseHeaders().set("Authorization", "Token Value  " + token);
+            // ✅ 2. Create a Map for the JSON response body.
+            Map<String, String> responseBodyMap = new HashMap<>();
+            responseBodyMap.put("status", "success");
+            responseBodyMap.put("refreshToken", refreshToken);
             
-            // 본문에는 간단한 성공 메시지만 전송
-            String jsonResponse = "{\"message\":\"Login successful\"}";
+            // ✅ 3. Convert the Map to a JSON string and send it as the response.
+            String jsonResponse = new Gson().toJson(responseBodyMap);
             sendResponse(exchange, 200, jsonResponse);
+
         } else {
-            // 인증 실패
+            // --- Authentication Failure ---
             String jsonResponse = "{\"error\":\"Invalid ID or password\"}";
             sendResponse(exchange, 401, jsonResponse);
         }
