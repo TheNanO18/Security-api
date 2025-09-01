@@ -4,6 +4,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.sql.SQLException;
+import java.util.HashMap;
+import java.util.Map;
 
 import javax.crypto.SecretKey;
 
@@ -43,16 +46,27 @@ public class LoginHandler implements HttpHandler {
         InputStream is = exchange.getRequestBody();
         String requestBody = new String(is.readAllBytes(), StandardCharsets.UTF_8);
 
-        String id       = parseJsonField(requestBody, "id"); // React 코드와 키 이름을 "username"으로 통일
+        String id       = parseJsonField(requestBody, "id");
         String password = parseJsonField(requestBody, "password");
 
         if (userDAO.validateUser(id, password)) {
             // 인증 성공: 토큰 생성
-            String issuer = "wedatalab";
-            String token  = jwsGenerator.generateToken(secretKey, id, issuer);
+            String issuer       = "wedatalab";
+            String accessToken  = jwsGenerator.generateAccessToken(secretKey, id, issuer);
+            String refreshToken = jwsGenerator.generateRefreshToken(secretKey, id);
+            
+            try {
+				userDAO.saveRefreshToken(id, refreshToken);
+			} catch (SQLException e) {
+				e.printStackTrace();
+			}
 
+            Map<String, String> token = new HashMap<>();
+            token.put("accessToken", "Bearer " + accessToken);
+            token.put("refreshToken", refreshToken);
+            
             // ✅ [수정] 응답 헤더에 "Authorization" 추가 (Bearer 접두사 포함)
-            exchange.getResponseHeaders().set("Authorization", "Bearer " + token);
+            exchange.getResponseHeaders().set("Authorization", "Token Value  " + token);
             
             // 본문에는 간단한 성공 메시지만 전송
             String jsonResponse = "{\"message\":\"Login successful\"}";
