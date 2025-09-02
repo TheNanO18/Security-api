@@ -113,6 +113,7 @@ public class ProcessHandler implements HttpHandler {
             }
             
          // ✅ 2. 포트(PORT) 확인 로직 추가 -> 삭제 예정
+            /*
             int clientPort = exchange.getRemoteAddress().getPort();
             // permissions.getPort()가 문자열이므로 정수(int)로 변환하여 비교합니다.
             int allowedPort = Integer.parseInt(permissions.getPort()); 
@@ -120,6 +121,7 @@ public class ProcessHandler implements HttpHandler {
                 sendJsonResponse(exchange, 403, Map.of("status", "error", "message", "Forbidden: Access from your port (" + clientPort + ") is not allowed."));
                 return;
             }
+            */
             
             List<String> allowedTables = Arrays.asList(permissions.getDatabase().split("\\s*,\\s*"));
             for (ProcessRequest req : mainRequest.getRequests()) {
