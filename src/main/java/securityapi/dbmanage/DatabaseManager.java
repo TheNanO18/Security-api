@@ -99,7 +99,7 @@ public class DatabaseManager {
         return columnNames;
     }
     
-    public void executeUpdate(Connection conn, UUID primaryKeyValue, Map<String, String> columnsToUpdate, List<String> allTableColumnNames, boolean encryptMode, String ivBase64ToSave, String algoToSave, List<String> originalEncryptedColumns, List<String> columnsToProcess, String tableName) throws SQLException {
+    public void updateDecryptedData(Connection conn, UUID primaryKeyValue, Map<String, String> columnsToUpdate,List<String> originalEncryptedColumns, List<String> columnsToProcess, String tableName) throws SQLException {
         List<String> setClauses = new ArrayList<>();
         List<Object> params     = new ArrayList<>();
 
@@ -111,31 +111,17 @@ public class DatabaseManager {
 
         // ⭐️ [핵심 수정] 암/복호화할 컬럼이 있을 때만 아래 로직을 실행합니다.
         if (columnsToProcess != null && !columnsToProcess.isEmpty()) {
-            if (encryptMode) {
-                // 암호화 모드일 때 en_col, iv_data, algo 업데이트
-                Set<String> newEncryptedSet = new HashSet<>(originalEncryptedColumns);
-                newEncryptedSet.addAll(columnsToProcess);
-                String newEncryptedColumns = String.join(",", newEncryptedSet);
-
-                setClauses.add("iv_data = ?");
-                setClauses.add("encryption_algo = ?");
-                setClauses.add("en_col = ?");
-                params.add(ivBase64ToSave);
-                params.add(algoToSave);
-                params.add(newEncryptedColumns);
+            // 복호화 모드일 때 en_col 업데이트 (필요시 iv_data, algo는 NULL로)
+            List<String> remainingEncryptedColumns = new ArrayList<>(originalEncryptedColumns);
+            remainingEncryptedColumns.removeAll(columnsToProcess);
+            
+            if (remainingEncryptedColumns.isEmpty()) {
+                setClauses.add("iv_data = NULL");
+                setClauses.add("encryption_algo = NULL");
+                setClauses.add("en_col = NULL");
             } else {
-                // 복호화 모드일 때 en_col 업데이트 (필요시 iv_data, algo는 NULL로)
-                List<String> remainingEncryptedColumns = new ArrayList<>(originalEncryptedColumns);
-                remainingEncryptedColumns.removeAll(columnsToProcess);
-                
-                if (remainingEncryptedColumns.isEmpty()) {
-                    setClauses.add("iv_data = NULL");
-                    setClauses.add("encryption_algo = NULL");
-                    setClauses.add("en_col = NULL");
-                } else {
-                    setClauses.add("en_col = ?");
-                    params.add(String.join(",", remainingEncryptedColumns));
-                }
+                setClauses.add("en_col = ?");
+                params.add(String.join(",", remainingEncryptedColumns));
             }
         }
         

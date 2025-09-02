@@ -156,7 +156,16 @@ public class ProcessService {
                     
                 }
             } else if ("proxy".equals(routeType)) {
+                String uuidStr    = requestData.getUuid();
+                String mode       = requestData.getMode();
+                String updateFlag = requestData.getUpdate();
+                UUID uuid         = UUID.fromString(uuidStr);
+                
                 if ("new".equals(infoType)) {
+                    if (mode == null || (!"en".equalsIgnoreCase(mode))) {
+                        throw new IllegalArgumentException("proxy mode 파라미터는 'en' 값만 허용됩니다.");
+                    }
+                    
                     Map<String, String> originalDataMap = requestData.getData();
                     if (originalDataMap == null || originalDataMap.isEmpty()) {
                         throw new IllegalArgumentException("'new' 타입 요청에는 'data' 객체가 반드시 필요합니다.");
@@ -176,16 +185,25 @@ public class ProcessService {
                         }
                     }
                     
+                    if ("T".equals(updateFlag)) {
+                        if (!dataToInsert.isEmpty()) {
+                            boolean isEncryptMode = "en".equalsIgnoreCase(mode);
+                            if (isEncryptMode) {
+                                dbManager.insertOldData(conn, table, uuid, dataToInsert, columnsToEncrypt, iv, algo);
+                            }
+                            response.put("message", "작업 완료 (DB 업데이트됨).");
+                        } else {
+                            response.put("message", "업데이트할 데이터가 없습니다.");
+                        }
+                    } else if ("F".equals(updateFlag)) {
+                        response.put("message", "작업이 시뮬레이션 되었습니다 (DB 업데이트 없음).");
+                    }
+                    
                     response.put("status", "success");
                     response.put("iv", iv);
                     response.put("result", dataToInsert);
 
                 } else if ("old".equals(infoType)) {
-                    String uuidStr    = requestData.getUuid();
-                    String mode       = requestData.getMode();
-                    String updateFlag = requestData.getUpdate();
-                    UUID uuid         = UUID.fromString(uuidStr);
-
                     if (mode == null || (!"en".equalsIgnoreCase(mode) && !"de".equalsIgnoreCase(mode))) {
                         throw new IllegalArgumentException("mode 파라미터는 'en' 또는 'de' 값만 허용됩니다.");
                     }
@@ -200,39 +218,79 @@ public class ProcessService {
                         processedData.put(passwordColumn, hashedPassword);
                     }
 
-                    List<String> requestedColumns = (colsToProcessStr != null && !colsToProcessStr.isBlank()) ?
-                            Arrays.stream(colsToProcessStr.split("\\s*,\\s*")).map(String::trim)
-                                    .filter(colName -> !"uuid".equalsIgnoreCase(colName)).collect(Collectors.toList())
-                            : new ArrayList<>();
-                    
                     String ivToUse = null;
 
-                    if (!requestedColumns.isEmpty()) {
-                        if ("en".equalsIgnoreCase(mode)) {
-                            ivToUse = encryptionService.generateIv();
-                            String algoToUse = requestData.getAlgo();
-                             if (algoToUse == null || algoToUse.isBlank()) {
-                                throw new IllegalArgumentException("암호화(en) 시에는 'algo' 파라미터가 반드시 필요합니다.");
-                            }
-                            for (String col : requestedColumns) {
-                                String value = targetData.get(col.toLowerCase());
-                                if (value != null) {
-                                    String result = encryptionService.encrypt(value, ivToUse, algoToUse);
-                                    processedData.put(col, result);
-                                }
-                            }
-                        } else { // "de" mode
-                            String originalEncryptedColsStr      = targetData.getOrDefault("en_col", "");
-                            List<String> alreadyEncryptedColumns = (originalEncryptedColsStr.isBlank()) ? new ArrayList<>() : new ArrayList<>(Arrays.asList(originalEncryptedColsStr.split(",")));
-                            List<String> columnsToProcess        = requestedColumns.stream().filter(alreadyEncryptedColumns::contains).collect(Collectors.toList());
+                    // ✅ 1. 'en' 모드와 'de' 모드의 로직을 명확히 분리합니다.
+                    if ("en".equalsIgnoreCase(mode)) {
+                        // --- 'en' (암호화) 모드 로직 ---
+                        List<String> requestedColumns = (colsToProcessStr != null && !colsToProcessStr.isBlank()) ?
+                                Arrays.stream(colsToProcessStr.split("\\s*,\\s*")).map(String::trim)
+                                        .filter(colName -> !"uuid".equalsIgnoreCase(colName)).collect(Collectors.toList())
+                                : new ArrayList<>();
 
-                            if (!columnsToProcess.isEmpty()) {
+                        if (requestedColumns.isEmpty()) {
+                            throw new IllegalArgumentException("'en' 모드에서는 'cols_to_process' 파라미터가 반드시 필요합니다.");
+                        }
+
+                        ivToUse = encryptionService.generateIv();
+                        String algoToUse = requestData.getAlgo();
+                        if (algoToUse == null || algoToUse.isBlank()) {
+                            throw new IllegalArgumentException("암호화(en) 시에는 'algo' 파라미터가 반드시 필요합니다.");
+                        }
+                        for (String col : requestedColumns) {
+                            String value = targetData.get(col.toLowerCase());
+                            if (value != null) {
+                                String result = encryptionService.encrypt(value, ivToUse, algoToUse);
+                                processedData.put(col, result);
+                            }
+                        }
+
+                        if ("T".equals(updateFlag)) {
+                            if (!processedData.isEmpty()) {
+                                dbManager.insertOldData(conn, table, uuid, processedData, requestedColumns, ivToUse, algo);
+                                response.put("message", "작업 완료 (DB 업데이트됨).");
+                            } else {
+                                response.put("message", "업데이트할 데이터가 없습니다.");
+                            }
+                        }
+
+                    } else if("en".equalsIgnoreCase(mode)) { // 'de' (복호화) 모드 로직
+                        // --- ✅ 'de' (복호화) 모드 로직 ---
+                        String originalEncryptedColsStr = targetData.getOrDefault("en_col", "");
+
+                        if (originalEncryptedColsStr.isBlank()) {
+                            response.put("message", "복호화할 컬럼이 없습니다 (en_col이 비어있음).");
+                        } else {
+                            // 1. DB에 저장된, 복호화 가능한 모든 컬럼의 목록을 준비합니다.
+                            List<String> allEncryptableColumns = new ArrayList<>(Arrays.asList(originalEncryptedColsStr.split(",")));
+                            
+                            // 2. 이번 요청에서 '실제로' 복호화를 수행할 컬럼 목록을 담을 변수입니다.
+                            List<String> columnsToDecrypt;
+
+                            // 3. 시나리오에 따라 'columnsToDecrypt' 리스트를 결정합니다.
+                            boolean isSimulationModeWithSpecificCols = "F".equals(updateFlag) && (colsToProcessStr != null && !colsToProcessStr.isBlank());
+
+                            if (isSimulationModeWithSpecificCols) {
+                                // 시나리오: update:"F" 이고, 특정 컬럼("col")이 지정된 경우
+                                List<String> requestedCols = Arrays.asList(colsToProcessStr.split("\\s*,\\s*"));
+                                // 요청된 컬럼 중, 실제로 암호화된 컬럼만 추려냅니다.
+                                columnsToDecrypt = allEncryptableColumns.stream()
+                                                                        .filter(requestedCols::contains)
+                                                                        .collect(Collectors.toList());
+                            } else {
+                                // 시나리오 1: update:"T" (전체 복호화 후 저장)
+                                // 시나리오 2: update:"F" 이고, 특정 컬럼 지정이 없는 경우 (전체 복호화 시뮬레이션)
+                                columnsToDecrypt = allEncryptableColumns;
+                            }
+
+                            // 4. 결정된 'columnsToDecrypt' 목록을 기반으로 복호화를 수행합니다.
+                            if (!columnsToDecrypt.isEmpty()) {
                                 ivToUse = targetData.get("iv_data");
                                 String algoToUse = targetData.get("encryption_algo");
                                 if (ivToUse == null || algoToUse == null) {
                                     throw new IllegalStateException("복호화를 위한 IV 또는 알고리즘 값이 DB에 없습니다.");
                                 }
-                                for (String col : columnsToProcess) {
+                                for (String col : columnsToDecrypt) {
                                     String value = targetData.get(col.toLowerCase());
                                     if (value != null) {
                                         String result = encryptionService.decrypt(value, ivToUse, algoToUse);
@@ -240,34 +298,27 @@ public class ProcessService {
                                     }
                                 }
                             }
+
+                            // 5. DB 업데이트는 "T" 플래그일 때만 수행합니다.
+                            if ("T".equals(updateFlag)) {
+                                if (!processedData.isEmpty()) {
+                                    // 'update:T'일 때는 항상 전체 복호화를 의미하므로, allEncryptableColumns를 파라미터로 사용합니다.
+                                    dbManager.updateDecryptedData(conn, uuid, processedData, allEncryptableColumns, allEncryptableColumns, table);
+                                    response.put("message", "작업 완료 (DB 업데이트됨).");
+                                } else {
+                                    response.put("message", "복호화 처리 후 업데이트할 데이터가 없습니다.");
+                                }
+                            }
                         }
                     }
 
-                    if ("T".equals(updateFlag)) {
-                        if (!processedData.isEmpty()) {
-                            boolean isEncryptMode                = "en".equalsIgnoreCase(mode);
-                            String originalEncryptedColsStr      = targetData.getOrDefault("en_col", "");
-                            List<String> alreadyEncryptedColumns = (originalEncryptedColsStr.isBlank()) ? new ArrayList<>() : new ArrayList<>(Arrays.asList(originalEncryptedColsStr.split(",")));
-                            List<String> allTableColumnNames     = dbManager.getColumnNames(conn, table);
-                            List<String> columnsToUpdateInDB     = new ArrayList<>(processedData.keySet());
-
-                            if (isEncryptMode) {
-                                dbManager.insertOldData(conn, table, uuid, processedData, requestedColumns, ivToUse, algo);
-                            } else {
-                                dbManager.executeUpdate(conn, uuid, processedData, allTableColumnNames, isEncryptMode, null, algo, alreadyEncryptedColumns, columnsToUpdateInDB, table);
-                            }
-                            response.put("message", "작업 완료 (DB 업데이트됨).");
-                        } else {
-                            response.put("message", "업데이트할 데이터가 없습니다.");
-                        }
-                    } else if ("F".equals(updateFlag)) {
+                    if (!"T".equals(updateFlag)) {
                         response.put("message", "작업이 시뮬레이션 되었습니다 (DB 업데이트 없음).");
                     }
-                    
+
                     response.put("status", "success");
                     response.put("iv", ivToUse);
                     response.put("result", processedData);
-                    
                 }
             }
             return response;
