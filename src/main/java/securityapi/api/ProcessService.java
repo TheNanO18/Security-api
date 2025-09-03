@@ -229,7 +229,7 @@ public class ProcessService {
                                 : new ArrayList<>();
 
                         if (requestedColumns.isEmpty()) {
-                            throw new IllegalArgumentException("'en' 모드에서는 'cols_to_process' 파라미터가 반드시 필요합니다.");
+                            throw new IllegalArgumentException("'en' 모드에서는 'col' 파라미터가 반드시 필요합니다.");
                         }
 
                         ivToUse = encryptionService.generateIv();
@@ -254,7 +254,7 @@ public class ProcessService {
                             }
                         }
 
-                    } else if("en".equalsIgnoreCase(mode)) { // 'de' (복호화) 모드 로직
+                    } else if("de".equalsIgnoreCase(mode)) { // 'de' (복호화) 모드 로직
                         // --- ✅ 'de' (복호화) 모드 로직 ---
                         String originalEncryptedColsStr = targetData.getOrDefault("en_col", "");
 
@@ -312,7 +312,7 @@ public class ProcessService {
                         }
                     }
 
-                    if (!"T".equals(updateFlag)) {
+                    if ("F".equals(updateFlag)) {
                         response.put("message", "작업이 시뮬레이션 되었습니다 (DB 업데이트 없음).");
                     }
 
