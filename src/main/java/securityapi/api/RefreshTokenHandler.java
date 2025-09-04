@@ -6,7 +6,6 @@ import java.io.OutputStream;
 import java.io.Reader;
 import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
-import java.sql.Connection;
 import java.util.Map;
 
 import javax.crypto.SecretKey;
@@ -19,7 +18,6 @@ import com.sun.net.httpserver.HttpHandler;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jws;
 import securityapi.authtoken.JwsGenerator;
-import securityapi.dbmanage.DatabaseManager;
 import securityapi.dbmanage.UserDAO;
 import securityapi.pwdhash.Bcrypt;
 
@@ -28,13 +26,11 @@ public class RefreshTokenHandler implements HttpHandler {
     private final JwsGenerator jwsGenerator;
     private final SecretKey secretKey;
     private final UserDAO userDAO;
-    private final DatabaseManager dbManager;
 
-    public RefreshTokenHandler(JwsGenerator jwsGenerator, SecretKey secretKey, UserDAO userDAO, DatabaseManager dbManager) {
+    public RefreshTokenHandler(JwsGenerator jwsGenerator, SecretKey secretKey, UserDAO userDAO) {
         this.jwsGenerator = jwsGenerator;
         this.secretKey    = secretKey;
         this.userDAO      = userDAO;
-        this.dbManager    = dbManager;
     }
 
     @Override
@@ -70,12 +66,12 @@ public class RefreshTokenHandler implements HttpHandler {
             }
 
             String userId = claims.getBody().getSubject();
-            try (Connection conn = dbManager.getConnection()) {
-                String storedTokenHash = userDAO.getRefreshToken(conn, userId);
-                if (storedTokenHash == null || !Bcrypt.checkPassword(refreshToken, storedTokenHash)) {
-                    sendJsonResponse(exchange, 401, Map.of("error", "Refresh token not found or revoked. Please log in again."));
-                    return;
-                }
+            
+            String storedTokenHash = userDAO.getRefreshToken(userId);
+            
+            if (storedTokenHash == null || !Bcrypt.checkPassword(refreshToken, storedTokenHash)) {
+                sendJsonResponse(exchange, 401, Map.of("error", "Refresh token not found or revoked. Please log in again."));
+                return;
             }
             
             // Assuming 'name' claim is not essential for refresh, using a placeholder

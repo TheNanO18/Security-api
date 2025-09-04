@@ -3,7 +3,7 @@ package securityapi.api;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
-import java.sql.Connection;
+import java.sql.SQLException;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -19,7 +19,6 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jws;
 import securityapi.authtoken.JwsGenerator;
 import securityapi.config.ConfigLoader;
-import securityapi.dbmanage.DatabaseManager;
 import securityapi.dbmanage.UserDAO;
 import securityapi.dto.MainRequest;
 import securityapi.dto.ProcessRequest;
@@ -33,7 +32,6 @@ public class ProcessHandler implements HttpHandler {
     private final JwsGenerator jwsHandler;
     private final SecretKey serverSecretKey;
     private final ProcessService processService;
-    private final DatabaseManager defaultDbManager;
     private final UserDAO userDAO;
 
     public ProcessHandler(JwsGenerator jwsHandler, SecretKey secretKey) {
@@ -41,12 +39,11 @@ public class ProcessHandler implements HttpHandler {
         this.serverSecretKey = secretKey;
         this.processService  = new ProcessService();
         
-        String dbUrl  = ConfigLoader.getProperty("db.url");
-        String dbUser = ConfigLoader.getProperty("db.user");
-        String dbPass = ConfigLoader.getProperty("db.pass");
-        
-        this.defaultDbManager = new DatabaseManager(dbUrl, dbUser, dbPass);
-        this.userDAO          = new UserDAO(dbUrl, dbUser, dbPass);
+        this.userDAO = new UserDAO(
+            ConfigLoader.getProperty("db.Url"), 
+            ConfigLoader.getProperty("db.User"), 
+            ConfigLoader.getProperty("db.Pass")
+        );
     }
 
     @Override
@@ -88,8 +85,13 @@ public class ProcessHandler implements HttpHandler {
             
             User permissions;
             
-            try (Connection conn = defaultDbManager.getConnection()) {
-                permissions = userDAO.getUserPermissions(conn, userId);
+            try {
+                permissions = userDAO.getUserPermissions(userId);
+            } catch (SQLException e) {
+                // DB 에러가 발생하면 500 에러를 보내고 종료합니다.
+                e.printStackTrace();
+                sendJsonResponse(exchange, 500, Map.of("status", "error", "message", "Database error while fetching permissions."));
+                return;
             }
 
             if (permissions == null) {

@@ -6,137 +6,155 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import securityapi.config.ConfigLoader;
 import securityapi.dto.User;
-import securityapi.pwdhash.Bcrypt; // Bcrypt 클래스 임포트
+import securityapi.pwdhash.Bcrypt;
 
 public class UserDAO {
+    private static final Logger logger = LoggerFactory.getLogger(UserDAO.class);
+    private final long slowQueryThreshold;
+    
     private final String dbUrl;
     private final String dbUser;
     private final String dbPass;
 
     public UserDAO(String dbUrl, String dbUser, String dbPass) {
-        this.dbUrl = dbUrl;
+        this.dbUrl  = dbUrl;
         this.dbUser = dbUser;
         this.dbPass = dbPass;
+        this.slowQueryThreshold = Long.parseLong(ConfigLoader.getProperty("slow.query.threshold.ms", "1"));
+    }
+    
+    /**
+     * A centralized wrapper for all database operations that handles connection,
+     * timing, and logging.
+     */
+    private <T> T executeDbOperation(String sql, SQLOperation<T> operation) throws SQLException {
+        long startTime = System.currentTimeMillis();
+        try (Connection conn = DriverManager.getConnection(dbUrl, dbUser, dbPass)) {
+            T result = operation.execute(conn);
+            long duration = System.currentTimeMillis() - startTime;
+            if (duration > slowQueryThreshold) {
+                logger.warn("Slow query detected: [{}] took {}ms", sql, duration);
+            }
+            return result;
+        } catch (SQLException e) {
+            logger.error("Database error on query: [{}]", sql, e);
+            throw e; // Re-throw the exception so the handler can catch it
+        }
+    }
+    
+    /**
+     * A functional interface to allow passing SQL logic as a lambda.
+     */
+    @FunctionalInterface
+    private interface SQLOperation<T> {
+        T execute(Connection conn) throws SQLException;
     }
 
-    /**
-     * 신규 사용자를 생성하고 데이터베이스에 저장합니다.
-     * @param id 생성할 사용자의 아이디
-     * @param rawPassword 해싱되지 않은 원본 비밀번호
-     * @return 생성 성공 시 true, 아이디 중복 시 false
-     * @throws SQLException 데이터베이스 처리 중 오류 발생 시
-     */
     public boolean createUser(String id, String rawPassword) throws SQLException {
-        String checkUserSql  = "SELECT id FROM en_user WHERE id = ?";
-        String insertUserSql = "INSERT INTO en_user (id, password) VALUES (?, ?)";
-
-        try (Connection conn = DriverManager.getConnection(dbUrl, dbUser, dbPass)) {
-            // 1. 아이디 중복 확인
-            try (PreparedStatement checkStmt = conn.prepareStatement(checkUserSql)) {
+        String sql = "INSERT INTO en_user (id, password) VALUES (?, ?)";
+        return executeDbOperation(sql, conn -> {
+            // First, check if user already exists
+            try (PreparedStatement checkStmt = conn.prepareStatement("SELECT id FROM en_user WHERE id = ?")) {
                 checkStmt.setString(1, id);
-                try (ResultSet rs = checkStmt.executeQuery()) {
+                if (checkStmt.executeQuery().next()) {
+                    logger.warn("Attempted to create a user that already exists: {}", id);
+                    return false; // User already exists
+                }
+            }
+
+            // If not, hash password and insert the new user
+            String hashedPassword = Bcrypt.hashPassword(rawPassword);
+            try (PreparedStatement insertStmt = conn.prepareStatement(sql)) {
+                insertStmt.setString(1, id);
+                insertStmt.setString(2, hashedPassword);
+                return insertStmt.executeUpdate() > 0;
+            }
+        });
+    }
+    
+    public boolean validateUser(String id, String rawPassword) throws SQLException {
+        String sql = "SELECT password FROM en_user WHERE id = ?";
+        return executeDbOperation(sql, conn -> {
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setString(1, id);
+                try (ResultSet rs = pstmt.executeQuery()) {
                     if (rs.next()) {
-                        return false; // 이미 존재하는 아이디인 경우 false 반환
+                        String storedHashedPassword = rs.getString("password");
+                        return Bcrypt.checkPassword(rawPassword, storedHashedPassword);
                     }
                 }
             }
-
-            // 2. 비밀번호 해싱
-            String hashedPassword = Bcrypt.hashPassword(rawPassword);
-
-            // 3. 사용자 정보 저장
-            try (PreparedStatement insertStmt = conn.prepareStatement(insertUserSql)) {
-                insertStmt.setString(1, id);
-                insertStmt.setString(2, hashedPassword);
-                int affectedRows = insertStmt.executeUpdate();
-                return affectedRows > 0;
-            }
-        }
+            return false;
+        });
     }
     
-    public boolean validateUser(String id, String rawPassword) {
-        String sql = "SELECT password FROM en_user WHERE id = ?";
-        try (Connection conn = DriverManager.getConnection(dbUrl, dbUser, dbPass);
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-
-            pstmt.setString(1, id);
-            try (ResultSet rs = pstmt.executeQuery()) {
-                if (rs.next()) {
-                    String storedHashedPassword = rs.getString("password");
-                    // ◀️ 중요: Bcrypt.checkPassword로 비교
-                    return Bcrypt.checkPassword(rawPassword, storedHashedPassword);
+    public User getUserPermissions(String userId) throws SQLException {
+        String sql = "SELECT id, password, ip, port, database FROM en_user WHERE id = ?";
+        return executeDbOperation(sql, conn -> {
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setString(1, userId);
+                try (ResultSet rs = pstmt.executeQuery()) {
+                    if (rs.next()) {
+                        User user = new User();
+                        user.setId(rs.getString("id"));
+                        // user.setPasswordHash(rs.getString("password")); // Avoid sending hash unless needed
+                        user.setIp(rs.getString("ip"));
+                        user.setPort(rs.getString("port"));
+                        user.setDatabase(rs.getString("database"));
+                        return user;
+                    }
                 }
             }
-        } catch (SQLException e) {
-            System.err.println("Database validation error: " + e.getMessage());
-        }
-        return false;
-    }
-    
-    public User getUserPermissions(Connection conn, String userId) throws SQLException {
-        String sql = "SELECT id, password, ip, port, database FROM en_user WHERE id = ?";
-        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setString(1, userId);
-            ResultSet rs = pstmt.executeQuery();
-            if (rs.next()) {
-                User user = new User();
-                user.setId(rs.getString("id"));
-                user.setIp(rs.getString("ip"));
-                user.setPort(rs.getString("port"));
-                user.setDatabase(rs.getString("database"));
-                return user;
-            }
-        }
-        return null; // 사용자를 찾지 못한 경우
+            return null; // User not found
+        });
     }
     
     public void saveRefreshToken(String userId, String refreshToken) throws SQLException {
-        // ❗ 보안: 원본 토큰 대신 해시된 값을 저장하는 것이 더 안전합니다.
-        String hashedToken = Bcrypt.hashPassword(refreshToken);
         String sql = "UPDATE en_user SET refresh_token = ? WHERE id = ?";
-
-        // UserDAO가 생성자에서 dbUrl 등을 받으므로, 여기서 직접 Connection을 생성합니다.
-        try (Connection conn = DriverManager.getConnection(this.dbUrl, this.dbUser, this.dbPass);
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            
-            pstmt.setString(1, hashedToken);
-            pstmt.setString(2, userId);
-            
-            int affectedRows = pstmt.executeUpdate();
-            
-            // 저장 성공 여부 확인 (디버깅용)
-            if (affectedRows > 0) {
-                System.out.println("SUCCESS: Refresh token saved for user '" + userId + "'");
-            } else {
-                System.err.println("ERROR: Failed to save refresh token. User '" + userId + "' not found.");
+        executeDbOperation(sql, conn -> {
+            String hashedToken = Bcrypt.hashPassword(refreshToken);
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setString(1, hashedToken);
+                pstmt.setString(2, userId);
+                int affectedRows = pstmt.executeUpdate();
+                if (affectedRows == 0) {
+                    logger.warn("Failed to save refresh token, user not found: {}", userId);
+                }
+                return affectedRows > 0; // Return value is required, but we can ignore it
             }
-        }
+        });
     }
 
-    // Get the stored (hashed) refresh token for a user
-    public String getRefreshToken(Connection conn, String userId) throws SQLException {
+    public String getRefreshToken(String userId) throws SQLException {
         String sql = "SELECT refresh_token FROM en_user WHERE id = ?";
-        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setString(1, userId);
-            try (ResultSet rs = pstmt.executeQuery()) {
-                if (rs.next()) {
-                    return rs.getString("refresh_token");
+        
+        return executeDbOperation(sql, conn -> {
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setString(1, userId);
+                try (ResultSet rs = pstmt.executeQuery()) {
+                    if (rs.next()) {
+                        return rs.getString("refresh_token");
+                    }
                 }
             }
-        }
-        return null;
+            return null;
+        });
     }
     
     public void clearRefreshToken(String userId) throws SQLException {
         String sql = "UPDATE en_user SET refresh_token = NULL WHERE id = ?";
-
-        try (Connection conn = DriverManager.getConnection(this.dbUrl, this.dbUser, this.dbPass);
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            
-            pstmt.setString(1, userId);
-            pstmt.executeUpdate();
-            System.out.println("Refresh token cleared for user: " + userId);
-        }
+        executeDbOperation(sql, conn -> {
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setString(1, userId);
+                pstmt.executeUpdate();
+                logger.info("Refresh token cleared for user: {}", userId);
+                return true; // Return value is required
+            }
+        });
     }
 }

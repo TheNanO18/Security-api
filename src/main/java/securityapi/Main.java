@@ -18,7 +18,6 @@ import securityapi.api.RegisterHandler;
 import securityapi.api.TableDataHandler;
 import securityapi.authtoken.JwsGenerator;
 import securityapi.config.ConfigLoader;
-import securityapi.dbmanage.DatabaseManager;
 import securityapi.dbmanage.UserDAO;
 
 public class Main {
@@ -39,12 +38,6 @@ public class Main {
         
         HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
         
-        DatabaseManager dbManager = new DatabaseManager(
-                ConfigLoader.getProperty("db.url"),
-                ConfigLoader.getProperty("db.user"),
-                ConfigLoader.getProperty("db.pass")
-        );
-        
         String dbUrl  = ConfigLoader.getProperty("db.url");
         String dbUser = ConfigLoader.getProperty("db.user");
         String dbPass = ConfigLoader.getProperty("db.pass");
@@ -53,7 +46,7 @@ public class Main {
         
         LoginHandler loginHandler               = new LoginHandler(jwsHandler, serverSecretKey, userDAO);
         ProcessHandler processHandler           = new ProcessHandler(jwsHandler, serverSecretKey);
-        RefreshTokenHandler refreshTokenHandler = new RefreshTokenHandler(jwsHandler, serverSecretKey, userDAO, dbManager);
+        RefreshTokenHandler refreshTokenHandler = new RefreshTokenHandler(jwsHandler, serverSecretKey, userDAO);
         LogoutHandler logoutHandler             = new LogoutHandler(jwsHandler, serverSecretKey, userDAO);
         
         //추후 삭제 가능성 높음
